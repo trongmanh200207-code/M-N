@@ -1,13 +1,30 @@
 /* ============================================================
-   APP LỊCH - OOP & COMPONENT-BASED (v3)
+   APP LỊCH - OOP & COMPONENT-BASED (v4 - FIREBASE SYNC)
    Phạm vi: 10/2016 → 03/2027
-   Tính năng: Thống kê CẢ NĂM, Checkbox ĐÃ LÀM, Nền ảnh cá nhân
+   Đồng bộ realtime qua Firebase Realtime Database
    ============================================================ */
 
-// ============ 1. STORAGE MANAGER (Singleton) ============
+// ============ 0. FIREBASE CONFIG ============
+// ⚠️ THAY BẰNG CONFIG THẬT CỦA BẠN (lấy từ Firebase Console)
+const firebaseConfig = {
+  apiKey: "AIzaSyCaBQBZIPCYYTM7Hw9CdY-Fp9uTzxRiiok",
+  authDomain: "cuonlichtinhyeu.firebaseapp.com",
+  databaseURL: "https://cuonlichtinhyeu-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "cuonlichtinhyeu",
+  storageBucket: "cuonlichtinhyeu.firebasestorage.app",
+  messagingSenderId: "651304877443",
+  appId: "1:651304877443:web:42af714763d0ed1a54cab6",
+  measurementId: "G-LFX15NYJWX"
+};
+
+// Khởi tạo Firebase
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+const dataRef = db.ref('app_lich_data');
+
+// ============ 1. STORAGE MANAGER (Dùng Firebase) ============
 class StorageManager {
     static instance = null;
-    static KEY = 'app_lich_data_v2';
 
     static getInstance() {
         if (!StorageManager.instance) {
@@ -16,24 +33,48 @@ class StorageManager {
         return StorageManager.instance;
     }
 
-    load() {
-        try {
-            const raw = localStorage.getItem(StorageManager.KEY);
-            return raw ? JSON.parse(raw) : {};
-        } catch (e) {
-            console.error('Lỗi load dữ liệu:', e);
-            return {};
-        }
+    constructor() {
+        this.localCache = {};
+        this.listeners = [];
+        this._initSync();
     }
 
-    save(data) {
-        try {
-            localStorage.setItem(StorageManager.KEY, JSON.stringify(data));
-            return true;
-        } catch (e) {
-            console.error('Lỗi lưu dữ liệu:', e);
-            return false;
-        }
+    _initSync() {
+        dataRef.on('value', (snapshot) => {
+            this.localCache = snapshot.val() || {};
+            this.listeners.forEach(cb => cb(this.localCache));
+            console.log('%c🔄 Dữ liệu đã được đồng bộ từ cloud', 'color: #10b981;');
+        });
+
+        dataRef.on('value', (snapshot) => {}, (error) => {
+            console.error('⚠️ Lỗi kết nối Firebase:', error.message);
+        });
+    }
+
+    onChange(callback) {
+        this.listeners.push(callback);
+    }
+
+    load() {
+        return this.localCache;
+    }
+
+    saveDay(dateKey, dayData) {
+        dataRef.child(dateKey).set(dayData)
+            .then(() => console.log(`✅ Đã lưu ${dateKey} lên cloud`))
+            .catch(err => console.error('Lỗi lưu:', err));
+    }
+
+    deleteDay(dateKey) {
+        dataRef.child(dateKey).remove()
+            .then(() => console.log(`🗑️ Đã xóa ${dateKey} khỏi cloud`))
+            .catch(err => console.error('Lỗi xóa:', err));
+    }
+
+    saveAll(data) {
+        dataRef.set(data)
+            .then(() => console.log('✅ Đã lưu toàn bộ dữ liệu lên cloud'))
+            .catch(err => console.error('Lỗi lưu toàn bộ:', err));
     }
 }
 
@@ -103,16 +144,17 @@ class DayModel {
 // ============ 4. CALENDAR CORE ============
 class CalendarCore {
     static MIN_YEAR = 2016;
-    static MIN_MONTH = 9;  // Tháng 10 (0-indexed)
+    static MIN_MONTH = 9;
     static MAX_YEAR = 2027;
-    static MAX_MONTH = 2;  // Tháng 3 (0-indexed)
+    static MAX_MONTH = 2;
 
     constructor() {
         const now = new Date();
         this.currentYear = now.getFullYear();
         this.currentMonth = now.getMonth();
         this._clamp();
-        this.data = StorageManager.getInstance().load();
+        this.storage = StorageManager.getInstance();
+        this.data = this.storage.load();
     }
 
     _clamp() {
@@ -126,6 +168,10 @@ class CalendarCore {
             this.currentYear = CalendarCore.MAX_YEAR;
             this.currentMonth = CalendarCore.MAX_MONTH;
         }
+    }
+
+    refreshData() {
+        this.data = this.storage.load();
     }
 
     canGoPrev() {
@@ -152,7 +198,6 @@ class CalendarCore {
         return `${DateUtils.MONTH_NAMES[this.currentMonth]} / ${this.currentYear}`;
     }
 
-    /** Lấy danh sách tất cả ngày trong NĂM hiện tại (trong phạm vi cho phép) */
     getAllDaysInYear(year) {
         const allDays = [];
         const startMonth = (year === CalendarCore.MIN_YEAR) ? CalendarCore.MIN_MONTH : 0;
@@ -205,30 +250,26 @@ class CalendarCore {
         const existing = this.data[dateKey] || {};
         const day = new DayModel(dateKey, { money, note, done: existing.done || false });
         if (day.hasData()) {
-            this.data[dateKey] = day.toJSON();
+            this.storage.saveDay(dateKey, day.toJSON());
         } else {
-            delete this.data[dateKey];
+            this.storage.deleteDay(dateKey);
         }
-        StorageManager.getInstance().save(this.data);
     }
 
     clearDay(dateKey) {
-        delete this.data[dateKey];
-        StorageManager.getInstance().save(this.data);
+        this.storage.deleteDay(dateKey);
     }
 
     toggleDone(dateKey) {
         const raw = this.data[dateKey] || {};
         const day = new DayModel(dateKey, { ...raw, done: !raw.done });
         if (day.hasData() || day.done) {
-            this.data[dateKey] = day.toJSON();
+            this.storage.saveDay(dateKey, day.toJSON());
         } else {
-            delete this.data[dateKey];
+            this.storage.deleteDay(dateKey);
         }
-        StorageManager.getInstance().save(this.data);
     }
 
-    /** Thống kê tháng hiện tại */
     getMonthStats() {
         const days = this.getDays().filter(d => !d.empty);
         let total = 0, count = 0, noteCount = 0, doneCount = 0;
@@ -240,7 +281,6 @@ class CalendarCore {
         return { total, count, noteCount, doneCount, avg: count > 0 ? total / count : 0 };
     }
 
-    /** Thống kê CẢ NĂM hiện tại */
     getYearStats() {
         const allDays = this.getAllDaysInYear(this.currentYear);
         let total = 0, count = 0, noteCount = 0, doneCount = 0;
@@ -276,7 +316,10 @@ class HeaderComponent {
                     APP Lịch - Quản lý Tài chính & Ghi chú
                 </h1>
                 <p class="app-subtitle">
-                    Phạm vi: Tháng 10/2016 → Tháng 3/2027 | Dữ liệu được lưu tự động trên trình duyệt
+                    Phạm vi: Tháng 10/2016 → Tháng 3/2027 | 
+                    <span style="color: #10b981; font-weight: 600;">
+                        <i class="fas fa-cloud"></i> Đồng bộ cloud realtime
+                    </span>
                 </p>
             </header>
         `;
@@ -331,7 +374,6 @@ class SummaryComponent {
     }
 
     render() {
-        // ✅ Dùng getYearStats() để thống kê CẢ NĂM
         const stats = this.calendar.getYearStats();
         return `
             <div class="summary">
@@ -594,7 +636,7 @@ class DetailModalComponent {
     showNoteDetail() {
         const entries = this.calendar.getNoteEntries();
 
-        this.title.textContent = ' Chi tiết ghi chú trong tháng';
+        this.title.textContent = '📝 Chi tiết ghi chú trong tháng';
         this.dateLabel.textContent = this.calendar.getMonthTitle();
 
         if (entries.length === 0) {
@@ -682,6 +724,14 @@ class App {
             () => this.render(),
             () => this.render()
         );
+
+        // Đăng ký lắng nghe sync từ Firebase
+        this.storage = StorageManager.getInstance();
+        this.storage.onChange(() => {
+            this.calendar.refreshData();
+            this.render();
+            console.log('%c🔄 UI đã được cập nhật từ dữ liệu cloud mới', 'color: #3b82f6;');
+        });
     }
 
     render() {
@@ -710,7 +760,7 @@ class App {
 
     start() {
         this.render();
-        console.log('%c✅ APP Lịch v3 đã khởi động!', 'color: #10b981; font-size: 16px; font-weight: bold;');
+        console.log('%c✅ APP Lịch v4 (Firebase Sync) đã khởi động!', 'color: #10b981; font-size: 16px; font-weight: bold;');
     }
 }
 

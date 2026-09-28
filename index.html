@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>APP Lịch - Quản lý Tài chính & Ghi chú</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div id="app-root"></div>
+
+    <!-- Modal chung (dùng cho cả nhập ngày và bảng chi tiết) -->
+    <div id="modal-overlay" class="modal-overlay hidden">
+        <div class="modal" id="modal-inner">
+            <div class="modal-header">
+                <h3 id="modal-title">Chi tiết ngày</h3>
+                <button class="btn-close" id="modal-close"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body">
+                <p class="modal-date" id="modal-date"></p>
+                <div id="modal-body-content"></div>
+            </div>
+            <div class="modal-footer" id="modal-footer-content"></div>
+        </div>
+    </div>
+
+    <script src="js/app.js"></script>
+</body>
+</html>

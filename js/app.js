@@ -1,28 +1,27 @@
 /* ============================================================
-   APP LỊCH - OOP & COMPONENT-BASED (v4 - FIREBASE SYNC)
+   APP LỊCH - OOP & COMPONENT-BASED (v5 - HISTORY LOG)
    Phạm vi: 10/2016 → 03/2027
-   Đồng bộ realtime qua Firebase Realtime Database
+   Tính năng: Lịch sử xóa/sửa 15 ngày gần nhất
    ============================================================ */
 
 // ============ 0. FIREBASE CONFIG ============
-// ⚠️ THAY BẰNG CONFIG THẬT CỦA BẠN (lấy từ Firebase Console)
+// ⚠️ THAY BẰNG CONFIG THẬT CỦA BẠN
 const firebaseConfig = {
-  apiKey: "AIzaSyCaBQBZIPCYYTM7Hw9CdY-Fp9uTzxRiiok",
-  authDomain: "cuonlichtinhyeu.firebaseapp.com",
-  databaseURL: "https://cuonlichtinhyeu-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "cuonlichtinhyeu",
-  storageBucket: "cuonlichtinhyeu.firebasestorage.app",
-  messagingSenderId: "651304877443",
-  appId: "1:651304877443:web:42af714763d0ed1a54cab6",
-  measurementId: "G-LFX15NYJWX"
+    apiKey: "DÁN_API_KEY_VÀO_ĐÂY",
+    authDomain: "cuonlichtinhyeu.firebaseapp.com",
+    databaseURL: "https://cuonlichtinhyeu-default-rtdb.firebaseio.com",
+    projectId: "cuonlichtinhyeu",
+    storageBucket: "cuonlichtinhyeu.appspot.com",
+    messagingSenderId: "DÁN_SENDER_ID_VÀO_ĐÂY",
+    appId: "DÁN_APP_ID_VÀO_ĐÂY"
 };
 
-// Khởi tạo Firebase
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 const dataRef = db.ref('app_lich_data');
+const historyRef = db.ref('app_lich_history');  // ✅ Đường dẫn mới cho lịch sử
 
-// ============ 1. STORAGE MANAGER (Dùng Firebase) ============
+// ============ 1. STORAGE MANAGER ============
 class StorageManager {
     static instance = null;
 
@@ -35,19 +34,40 @@ class StorageManager {
 
     constructor() {
         this.localCache = {};
+        this.historyCache = [];
         this.listeners = [];
         this._initSync();
     }
 
     _initSync() {
+        // Lắng nghe dữ liệu chính
         dataRef.on('value', (snapshot) => {
             this.localCache = snapshot.val() || {};
             this.listeners.forEach(cb => cb(this.localCache));
             console.log('%c🔄 Dữ liệu đã được đồng bộ từ cloud', 'color: #10b981;');
         });
 
-        dataRef.on('value', (snapshot) => {}, (error) => {
-            console.error('⚠️ Lỗi kết nối Firebase:', error.message);
+        // ✅ Lắng nghe lịch sử
+        historyRef.on('value', (snapshot) => {
+            const raw = snapshot.val() || {};
+            // Chuyển object thành array, sort theo thời gian mới nhất
+            this.historyCache = Object.values(raw)
+                .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+            // Tự động xóa lịch sử quá 15 ngày
+            this._cleanupOldHistory();
+            console.log('%c📜 Lịch sử đã được đồng bộ', 'color: #f59e0b;');
+        });
+    }
+
+    /** Xóa lịch sử quá 15 ngày */
+    _cleanupOldHistory() {
+        const fifteenDaysAgo = Date.now() - (15 * 24 * 60 * 60 * 1000);
+        const toDelete = this.historyCache.filter(h => (h.timestamp || 0) < fifteenDaysAgo);
+        
+        toDelete.forEach(item => {
+            if (item.id) {
+                historyRef.child(item.id).remove();
+            }
         });
     }
 
@@ -57,6 +77,33 @@ class StorageManager {
 
     load() {
         return this.localCache;
+    }
+
+    /** Lấy lịch sử */
+    getHistory() {
+        const fifteenDaysAgo = Date.now() - (15 * 24 * 60 * 60 * 1000);
+        return this.historyCache.filter(h => (h.timestamp || 0) >= fifteenDaysAgo);
+    }
+
+    /** ✅ Lưu hành động vào lịch sử */
+    saveHistory(action, dateKey, oldData, newData) {
+        const historyId = Date.now().toString();
+        const now = new Date();
+        const entry = {
+            id: historyId,
+            action: action,           // 'edit' hoặc 'delete'
+            dateKey: dateKey,         // ngày liên quan trong lịch
+            timestamp: now.getTime(),
+            actionDate: now.toISOString(),  // ngày giờ thực hiện hành động
+            oldNote: (oldData && oldData.note) || '',
+            oldMoney: (oldData && oldData.money) || 0,
+            newNote: (newData && newData.note) || '',
+            newMoney: (newData && newData.money) || 0
+        };
+
+        historyRef.child(historyId).set(entry)
+            .then(() => console.log('📜 Đã lưu vào lịch sử'))
+            .catch(err => console.error('Lỗi lưu lịch sử:', err));
     }
 
     saveDay(dateKey, dayData) {
@@ -69,12 +116,6 @@ class StorageManager {
         dataRef.child(dateKey).remove()
             .then(() => console.log(`🗑️ Đã xóa ${dateKey} khỏi cloud`))
             .catch(err => console.error('Lỗi xóa:', err));
-    }
-
-    saveAll(data) {
-        dataRef.set(data)
-            .then(() => console.log('✅ Đã lưu toàn bộ dữ liệu lên cloud'))
-            .catch(err => console.error('Lỗi lưu toàn bộ:', err));
     }
 }
 
@@ -107,6 +148,30 @@ class DateUtils {
         const { year, month, day } = DateUtils.parseKey(dateKey);
         const dow = new Date(year, month, day).getDay();
         return `${DateUtils.WEEKDAYS[dow]} ${day}/${String(month + 1).padStart(2, '0')}/${year}`;
+    }
+
+    /** Format ngày giờ đầy đủ */
+    static formatDateTime(isoString) {
+        const d = new Date(isoString);
+        const dow = DateUtils.WEEKDAYS[d.getDay()];
+        const day = d.getDate();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const year = d.getFullYear();
+        const hours = String(d.getHours()).padStart(2, '0');
+        const minutes = String(d.getMinutes()).padStart(2, '0');
+        return `${dow} ${day}/${month}/${year} - ${hours}:${minutes}`;
+    }
+
+    /** Tính thời gian đã trôi qua */
+    static timeAgo(isoString) {
+        const seconds = Math.floor((Date.now() - new Date(isoString).getTime()) / 1000);
+        if (seconds < 60) return 'Vừa xong';
+        const minutes = Math.floor(seconds / 60);
+        if (minutes < 60) return `${minutes} phút trước`;
+        const hours = Math.floor(minutes / 60);
+        if (hours < 24) return `${hours} giờ trước`;
+        const days = Math.floor(hours / 24);
+        return `${days} ngày trước`;
     }
 
     static getDaysInMonth(year, month) {
@@ -246,9 +311,16 @@ class CalendarCore {
             && dateObj.getDate() === now.getDate();
     }
 
+    /** ✅ Lưu ngày + ghi vào lịch sử nếu có thay đổi ghi chú */
     saveDay(dateKey, money, note) {
         const existing = this.data[dateKey] || {};
         const day = new DayModel(dateKey, { money, note, done: existing.done || false });
+        
+        // ✅ Nếu ghi chú thay đổi → lưu vào lịch sử
+        if (existing.note && existing.note !== note) {
+            this.storage.saveHistory('edit', dateKey, existing, day.toJSON());
+        }
+        
         if (day.hasData()) {
             this.storage.saveDay(dateKey, day.toJSON());
         } else {
@@ -256,7 +328,15 @@ class CalendarCore {
         }
     }
 
+    /** ✅ Xóa ngày + ghi vào lịch sử */
     clearDay(dateKey) {
+        const existing = this.data[dateKey] || {};
+        
+        // ✅ Nếu có ghi chú → lưu vào lịch sử trước khi xóa
+        if (existing.note && existing.note.trim()) {
+            this.storage.saveHistory('delete', dateKey, existing, null);
+        }
+        
         this.storage.deleteDay(dateKey);
     }
 
@@ -312,8 +392,8 @@ class HeaderComponent {
         return `
             <header class="app-header">
                 <h1 class="app-title">
-                    <i class="fas fa-calendar-alt"></i>
-                    APP Lịch - Quản lý Tài chính & Ghi chú
+                    <i class="fas fa-heart" style="color: #ef4444;"></i>
+                    M❤️N - Quản lý Tài chính & Ghi chú
                 </h1>
                 <p class="app-subtitle">
                     Phạm vi: Tháng 10/2016 → Tháng 3/2027 | 
@@ -367,14 +447,17 @@ class ControlsComponent {
 }
 
 class SummaryComponent {
-    constructor(calendar, onMoneyClick, onNoteClick) {
+    constructor(calendar, onMoneyClick, onNoteClick, onHistoryClick) {
         this.calendar = calendar;
         this.onMoneyClick = onMoneyClick;
         this.onNoteClick = onNoteClick;
+        this.onHistoryClick = onHistoryClick;  // ✅ Thêm handler mới
     }
 
     render() {
         const stats = this.calendar.getYearStats();
+        const historyCount = StorageManager.getInstance().getHistory().length;
+        
         return `
             <div class="summary">
                 <div class="summary-card total" id="summary-money">
@@ -382,9 +465,10 @@ class SummaryComponent {
                     <div class="summary-value">${DateUtils.formatMoney(stats.total)}</div>
                     <div class="summary-hint">👆 Click để xem chi tiết tháng</div>
                 </div>
-                <div class="summary-card income">
-                    <div class="summary-label"><i class="fas fa-hand-holding-usd"></i> Số ngày có dữ liệu (năm ${this.calendar.currentYear})</div>
-                    <div class="summary-value">${stats.count} ngày</div>
+                <div class="summary-card income" id="summary-history">
+                    <div class="summary-label"><i class="fas fa-history"></i> Dữ liệu cũ (15 ngày)</div>
+                    <div class="summary-value">${historyCount} mục</div>
+                    <div class="summary-hint">👆 Click để xem lịch sử xóa/sửa</div>
                 </div>
                 <div class="summary-card note" id="summary-note">
                     <div class="summary-label"><i class="fas fa-sticky-note"></i> Số ghi chú (năm ${this.calendar.currentYear})</div>
@@ -402,6 +486,7 @@ class SummaryComponent {
     bind() {
         document.getElementById('summary-money').addEventListener('click', () => this.onMoneyClick());
         document.getElementById('summary-note').addEventListener('click', () => this.onNoteClick());
+        document.getElementById('summary-history').addEventListener('click', () => this.onHistoryClick());  // ✅ Bind mới
     }
 }
 
@@ -531,6 +616,109 @@ class DayModalComponent {
             this.hide();
             this.onSave();
         }
+    }
+
+    _escapeHtml(str) {
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    }
+}
+
+/** ✅ Component mới: Hiển thị lịch sử dữ liệu cũ */
+class HistoryModalComponent {
+    constructor() {
+        this._bindDOM();
+    }
+
+    _bindDOM() {
+        this.overlay = document.getElementById('modal-overlay');
+        this.title = document.getElementById('modal-title');
+        this.dateLabel = document.getElementById('modal-date');
+        this.bodyEl = document.getElementById('modal-body-content');
+        this.footerEl = document.getElementById('modal-footer-content');
+        this.btnClose = document.getElementById('modal-close');
+
+        this.btnClose.addEventListener('click', () => this.hide());
+        this.overlay.addEventListener('click', (e) => { if (e.target === this.overlay) this.hide(); });
+    }
+
+    hide() {
+        this.overlay.classList.add('hidden');
+    }
+
+    show() {
+        const history = StorageManager.getInstance().getHistory();
+
+        this.title.textContent = ' Dữ liệu cũ - Lịch sử 15 ngày';
+        this.dateLabel.textContent = 'Các ghi chú đã bị xóa hoặc chỉnh sửa';
+
+        if (history.length === 0) {
+            this.bodyEl.innerHTML = `
+                <div class="empty-state">
+                    <i class="fas fa-history"></i>
+                    <p>Chưa có lịch sử xóa/sửa nào trong 15 ngày qua</p>
+                </div>
+            `;
+        } else {
+            let rows = '';
+            history.forEach((item) => {
+                const actionIcon = item.action === 'delete' ? '🗑️' : '️';
+                const actionLabel = item.action === 'delete' 
+                    ? '<span class="action-delete">ĐÃ XÓA</span>' 
+                    : '<span class="action-edit">ĐÃ SỬA</span>';
+                
+                const oldNoteDisplay = item.oldNote 
+                    ? `<div class="history-old"><strong>Cũ:</strong> ${this._escapeHtml(item.oldNote)}</div>` 
+                    : '';
+                const newNoteDisplay = (item.action === 'edit' && item.newNote) 
+                    ? `<div class="history-new"><strong>Mới:</strong> ${this._escapeHtml(item.newNote)}</div>` 
+                    : '';
+                const moneyChange = (item.oldMoney !== item.newMoney)
+                    ? `<div class="history-money">💰 ${DateUtils.formatMoney(item.oldMoney)} → ${DateUtils.formatMoney(item.newMoney)}</div>`
+                    : '';
+
+                rows += `
+                    <tr>
+                        <td class="history-action">${actionIcon} ${actionLabel}</td>
+                        <td class="history-date">
+                            <div class="history-linked-date">📅 Ngày: ${DateUtils.formatDisplayShort(item.dateKey)}</div>
+                            <div class="history-action-date">⏰ ${DateUtils.formatDateTime(item.actionDate)}</div>
+                            <div class="history-ago">(${DateUtils.timeAgo(item.actionDate)})</div>
+                        </td>
+                        <td class="history-content">
+                            ${oldNoteDisplay}
+                            ${newNoteDisplay}
+                            ${moneyChange}
+                        </td>
+                    </tr>
+                `;
+            });
+
+            this.bodyEl.innerHTML = `
+                <table class="detail-table history-table">
+                    <thead>
+                        <tr>
+                            <th style="width:15%">Hành động</th>
+                            <th style="width:30%">Thời gian</th>
+                            <th style="width:55%">Nội dung</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>
+                <div class="history-info">
+                    <i class="fas fa-info-circle"></i> 
+                    Lịch sử tự động xóa sau 15 ngày. Dữ liệu cũ được lưu để bạn có thể xem lại.
+                </div>
+            `;
+        }
+
+        this.footerEl.innerHTML = `<button class="btn btn-secondary" id="btn-close-history"><i class="fas fa-times"></i> Đóng</button>`;
+        document.getElementById('btn-close-history').addEventListener('click', () => this.hide());
+
+        this.overlay.classList.remove('hidden');
+        this.modalEl = document.getElementById('modal-inner');
+        this.modalEl.classList.add('modal-large');
     }
 
     _escapeHtml(str) {
@@ -715,7 +903,8 @@ class App {
         this.summaryCmp = new SummaryComponent(
             this.calendar,
             () => this._showMoneyDetail(),
-            () => this._showNoteDetail()
+            () => this._showNoteDetail(),
+            () => this._showHistory()  // ✅ Handler mới
         );
         this.gridCmp = new CalendarGridComponent(this.calendar, (dateKey) => this._openDayModal(dateKey));
         this.dayModalCmp = new DayModalComponent(this.calendar, () => this.render());
@@ -724,8 +913,8 @@ class App {
             () => this.render(),
             () => this.render()
         );
+        this.historyModalCmp = new HistoryModalComponent();  // ✅ Component mới
 
-        // Đăng ký lắng nghe sync từ Firebase
         this.storage = StorageManager.getInstance();
         this.storage.onChange(() => {
             this.calendar.refreshData();
@@ -758,9 +947,13 @@ class App {
         this.detailModalCmp.showNoteDetail();
     }
 
+    _showHistory() {  // ✅ Method mới
+        this.historyModalCmp.show();
+    }
+
     start() {
         this.render();
-        console.log('%c✅ APP Lịch v4 (Firebase Sync) đã khởi động!', 'color: #10b981; font-size: 16px; font-weight: bold;');
+        console.log('%c✅ APP Lịch v5 (History Log) đã khởi động!', 'color: #10b981; font-size: 16px; font-weight: bold;');
     }
 }
 

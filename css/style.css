@@ -595,3 +595,81 @@ body::before {
 
     .detail-table .note-text { max-width: 120px; }
 }
+/* ============ HISTORY TABLE ============ */
+.history-table .history-action {
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.history-table .action-delete {
+    color: #ef4444;
+    background: #fee2e2;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+}
+
+.history-table .action-edit {
+    color: #3b82f6;
+    background: #dbeafe;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+}
+
+.history-table .history-date {
+    font-size: 12px;
+    line-height: 1.6;
+}
+
+.history-table .history-linked-date {
+    font-weight: 600;
+    color: var(--primary);
+}
+
+.history-table .history-action-date {
+    color: var(--text);
+    font-weight: 500;
+}
+
+.history-table .history-ago {
+    color: var(--text-light);
+    font-style: italic;
+    font-size: 11px;
+}
+
+.history-table .history-content {
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.history-table .history-old {
+    color: #ef4444;
+    text-decoration: line-through;
+    opacity: 0.7;
+    margin-bottom: 4px;
+}
+
+.history-table .history-new {
+    color: #10b981;
+    font-weight: 600;
+}
+
+.history-table .history-money {
+    color: var(--warning);
+    font-weight: 600;
+    margin-top: 4px;
+}
+
+.history-info {
+    margin-top: 16px;
+    padding: 12px 16px;
+    background: rgba(59, 130, 246, 0.1);
+    border-left: 4px solid #3b82f6;
+    border-radius: 8px;
+    font-size: 13px;
+    color: #1e40af;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}

@@ -7,13 +7,14 @@
 // ============ 0. FIREBASE CONFIG ============
 // ⚠️ THAY BẰNG CONFIG THẬT CỦA BẠN
 const firebaseConfig = {
-    apiKey: "DÁN_API_KEY_VÀO_ĐÂY",
-    authDomain: "cuonlichtinhyeu.firebaseapp.com",
-    databaseURL: "https://cuonlichtinhyeu-default-rtdb.firebaseio.com",
-    projectId: "cuonlichtinhyeu",
-    storageBucket: "cuonlichtinhyeu.appspot.com",
-    messagingSenderId: "DÁN_SENDER_ID_VÀO_ĐÂY",
-    appId: "DÁN_APP_ID_VÀO_ĐÂY"
+  apiKey: "AIzaSyCaBQBZIPCYYTM7Hw9CdY-Fp9uTzxRiiok",
+  authDomain: "cuonlichtinhyeu.firebaseapp.com",
+  databaseURL: "https://cuonlichtinhyeu-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "cuonlichtinhyeu",
+  storageBucket: "cuonlichtinhyeu.firebasestorage.app",
+  messagingSenderId: "651304877443",
+  appId: "1:651304877443:web:102bb08147685d3054cab6",
+  measurementId: "G-9DBQRF0TWT"
 };
 
 firebase.initializeApp(firebaseConfig);
